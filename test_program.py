@@ -4,7 +4,7 @@ from main import *
 
 class TestModifiedGeneratorMethods(unittest.TestCase):
     def setUp(self):
-        self.func = VerticalShiftFunction([0, 1, 2, 3], [2,3], 1, n=4, r=4)
+        self.func = VerticalShiftRegisterFunction([0, 1, 2, 3], [2, 3], 1, n=4, r=4)
         self.initial_state = 59081      #1110 0110 1100 1001
         self.acted_state = 27699       #0110 1100 0011 0011
         self.acted_twice_state = 50017      #1100 0011 0110 0001
