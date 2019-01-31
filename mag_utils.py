@@ -86,12 +86,11 @@ def register_function_runtime_logger(func_list, n, r, act_times, measure_times):
     np.set_printoptions(threshold=np.nan)
     init_state = split_state_to_blocks(randint(0, (1 << nr) - 1), n, r)
 
-    logging.info("Initial state: " + str(init_state) + "\n")
-
     for func in func_list:
         logging.info("Function:  " + str(type(func)) + "\n")
         ts = []
         for i in range(measure_times):
+            logging.info("Initial state: " + str(init_state))
             print("tic!")
             logging.info(str(i) + " measurement: ")
             t1 = time()
@@ -102,7 +101,8 @@ def register_function_runtime_logger(func_list, n, r, act_times, measure_times):
             logging.info("\t " + "Execution time: " + str(t2 - t1))
         logging.info("")
         logging.info("Average time: " + str(sum(((ts[i]) for i in range(len(ts)))) / len(ts)))
-        logging.info("=========")
+        logging.info("Delta time: " + str((max(ts) - min(ts))/2))
+        logging.info("=========\n")
 
 
 def parse_exp(path):
@@ -115,7 +115,7 @@ def parse_exp(path):
                 yield ((), inf)
 
 
-def log_all_exps(n=8, r=32):
+def log_all_exps(n, r):
     current_time = time()
     log_name = "logs/exps_" + str(n) + "_" + str(r) + "_" + str(current_time) + ".log"
     logging.basicConfig(filename=log_name, level=logging.INFO)
@@ -125,8 +125,8 @@ def log_all_exps(n=8, r=32):
     estimate = (n ** 2) * r + n * r - 2 * n
     print("Оценка Виландта: " + str(wilandt))
     print("Оценка Кореневой: " + str(estimate))
-
-    parameters = VerticalShiftRegisterFunction.all_sets_of_parametres(n, r)
+    f = VerticalShiftRegisterFunction([], [], 0, n, r)
+    parameters = f.all_sets_of_parametres()
 
     cnt = 0
     start = 0
@@ -140,7 +140,7 @@ def log_all_exps(n=8, r=32):
             break
         d, c, sh = p
         exp = inf
-        f = VerticalShiftRegisterFunction(d, c, sh, n=n, r=r)
+        f = VerticalShiftRegisterFunction(d, c, n, r, sh)
         adj_array = f.analytical_create_mixing_matrix()
         powered = adj_array
         #
@@ -182,7 +182,7 @@ def log_all_iops(exp_log_file, n, r):
             continue
         if exp == inf:
             continue
-        func = VerticalShiftRegisterFunction(d, s, sh, n=n, r=r)
+        func = VerticalShiftRegisterFunction(d, s, n, r, sh)
         iop = find_index_of_perfection(func, exp)
         logging.info(str(p) + ";exp=" + str(exp) + ";iop=" + str(iop))
         count += 1
@@ -211,24 +211,25 @@ def find_index_of_perfection(func, exp):
     r = func.r
     nr = n * r
     for power in range(exp, 500):
-        print("CHECKING " + str(power))
+        #print("CHECKING " + str(power))
         checked_master_bits_num = 0
         for master_bit_num in range(nr):
             all_dependencies = False
             slaved_bits = 0  # ноль - младший; порядок в этом методе не важен, тщмта (но это не точно)
-            print("\tmasterbit = " + str(master_bit_num))
+            #print("\tmasterbit = " + str(master_bit_num))
             maximum = 1 << nr
-            for state_ in range((1 << nr)):
+            masterbit = 1 << master_bit_num
+            for state_ in lkg(nr):      # range((1 << nr)):
                 state_ = randint(1, maximum - 1)
-                neighbor_state = split_state_to_blocks(state_ ^ (1 << master_bit_num), n, r)
+                neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
                 acted_state = func.act_k_times(
                     split_state_to_blocks(state_, n, r),
                     power)
                 acted_neigh_state = func.act_k_times(neighbor_state, power)
                 xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
                 slaved_bits = slaved_bits | xor
-                print("State " + bin(state_) + " has been checked")
-                if slaved_bits == ((1 << nr) - 1):
+                #print("State " + bin(state_) + " has been checked")
+                if slaved_bits == ((maximum) - 1):
                     all_dependencies = True
                     break
             if not all_dependencies:
@@ -239,3 +240,90 @@ def find_index_of_perfection(func, exp):
         if checked_master_bits_num == nr:
             return power
     return inf
+
+
+def find_index_of_0_perfection(func, exp):
+    n = func.n
+    r = func.r
+    nr = n * r
+    for power in range(exp, 500):
+        #print("CHECKING " + str(power))
+        checked_master_bits_num = 0
+        for master_bit_num in range(nr - r, nr):
+            all_dependencies = False
+            slaved_bits = 0  # ноль - младший; порядок в этом методе не важен, тщмта (но это не точно)
+            #print("\tmasterbit = " + str(master_bit_num))
+            maximum = 1 << nr
+            masterbit = 1 << master_bit_num
+            for state_ in lkg(nr):
+                neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
+                acted_state = func.act_k_times(
+                    split_state_to_blocks(state_, n, r),
+                    power)
+                acted_neigh_state = func.act_k_times(neighbor_state, power)
+                xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
+                slaved_bits = slaved_bits | xor
+                #print("State " + bin(state_) + " has been checked")
+                if slaved_bits == ((maximum) - 1):
+                    all_dependencies = True
+                    break
+            if not all_dependencies:
+                break
+            else:
+                checked_master_bits_num += 1
+            print("\t\tChecked bits num: " + str(checked_master_bits_num))
+        if checked_master_bits_num == r:
+            return power
+    return inf
+
+def find_index_of_7_perfection(func, exp):
+    n = func.n
+    r = func.r
+    nr = n * r
+    for power in range(exp, 500):
+        #print("CHECKING " + str(power))
+        checked_master_bits_num = 0
+        for master_bit_num in range(nr):
+            all_dependencies = False
+            slaved_bits = 0  # ноль - младший; порядок в этом методе не важен, тщмта (но это не точно)
+            #print("\tmasterbit = " + str(master_bit_num))
+            maximum = 1 << nr
+            masterbit = 1 << master_bit_num
+            for state_ in lkg(nr):
+                neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
+                acted_state = func.act_k_times(
+                    split_state_to_blocks(state_, n, r),
+                    power)
+                acted_neigh_state = func.act_k_times(neighbor_state, power)
+                xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
+                slaved_bits = slaved_bits | xor
+                #print("State " + bin(state_) + " has been checked")
+                if slaved_bits == ((maximum) - 1):
+                    all_dependencies = True
+                    break
+            if not all_dependencies:
+                break
+            else:
+                checked_master_bits_num += 1
+            print("\t\tChecked bits num: " + str(checked_master_bits_num))
+        if checked_master_bits_num == r:
+            return power
+    return inf
+
+
+#   num_of_bits >= 2
+def lkg(num_of_bits):
+    m = 1 << num_of_bits
+    c = 0
+    while c % 2 == 0:
+        c = randint(1, m - 1)
+
+    a = 2
+    while (a - 1) % 4 != 0:
+        a = randint(4, m - 1)
+    init = randint(0, m - 1)
+    yield init
+    for i in range(m - 1):
+        init = (a * init + c) % m
+        yield init
+

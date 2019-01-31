@@ -1,13 +1,14 @@
 import numpy as np
+import itertools as it
 
 
 class AdditiveRegisterFunction:
 
-    def __init__(self, D, n=8, r=32):
+    def __init__(self, D, n, r):
         self.D = D
         self.n = n
         self.r = r
-        self.d_set_iterator = self._generate_d_set_iterator(self.n)
+        self.d_set_iterator = self._generate_d_set_iterator()
         self.estimate = ((self.n ** 2) * self.r + self.n * self.r - 2 * self.n)
 
     def act(self, state):
@@ -50,9 +51,9 @@ class AdditiveRegisterFunction:
             master_bits = 0  # ноль - младший
             for state_ in range((1 << nr)):
                 neighbor_state = state_ ^ (1 << slaved_bit_num)
-                acted_state = self.act(state_)
-                acted_neigh_state = self.act(neighbor_state)
-                xor = acted_state ^ acted_neigh_state
+                acted_state = self.act(self.spilt_state_to_blocks(state_))
+                acted_neigh_state = self.act(self.spilt_state_to_blocks(neighbor_state))
+                xor = self.combine_blocks_to_state(acted_state) ^ self.combine_blocks_to_state(acted_neigh_state)
                 master_bits = master_bits | xor
             mixing_matrix[nr - 1 - slaved_bit_num, 0:nr] = self.int_to_bin_np_row(master_bits)
         return mixing_matrix
@@ -66,21 +67,25 @@ class AdditiveRegisterFunction:
             uint = uint >> 1
         return bin_row
 
-    @staticmethod
-    def _generate_d_set_iterator(n):
+    def combine_blocks_to_state(self, blocks):
+        result = 0
+        for i in range(self.n):
+            result ^= int(blocks[(self.n - 1) - i]) << self.r * i
+        return result
+
+    def _generate_d_set_iterator(self):
         base_list = [0]
 
-        a = [j for j in range(1, n)]
-        for i in range(1, n):
+        a = [j for j in range(1, self.n)]
+        for i in range(1, self.n):
             combs = tuple(it.combinations(a, i))
             for comb in combs:
                 yield base_list + list(comb)
 
-    @staticmethod
-    def all_sets_of_parametres(n, r):
-        d_iter = list(AdditiveRegisterFunction._generate_d_set_iterator(n))
+    def all_sets_of_parametres(self):
+        d_iter = list(self._generate_d_set_iterator())
         for d in d_iter:
-            for step in range(1, r):
+            for step in range(1, self.r):
                 yield (d, step)
 
     def _create_triangle_matrix(self):
@@ -94,31 +99,28 @@ class AdditiveRegisterFunction:
 
 class VerticalShiftRegisterFunction(AdditiveRegisterFunction):
 
-    def __init__(self, D, S, shift_step, n=8, r=32):
+    def __init__(self, D, S, shift_step, n, r,):
         super().__init__(D, n, r)
         self.S = S
         self.shift_step = shift_step
-        self.s_set_iterator = VerticalShiftRegisterFunction._generate_s_set_iterator(self.n)
+        self.s_set_iterator = self._generate_s_set_iterator()
         self.estimate = ((self.n ** 2) * self.r + self.n * self.r - 2 * self.n)
+        self.rbit = 1 << self.r
 
-    def act(self, state):
+    def act(self, state: list):
         # print("STATE: " + str(state))
         last_block: int = 0
         for d in self.D:
             last_block = last_block + state[d] # сумма
-        last_block %= (1 << self.r)
-        next_state = np.roll(state, -1, axis=0)  # сдвиг блоков регистра
-        next_state = np.array(next_state, dtype=np.int64)
-        # print(str(type(last_block)) + " last_block " + str(last_block))
-        # print(str(type(next_state[0])) + " next_state " + str(last_block))
-        next_state[self.n - 1] = last_block
+        last_block %= self.rbit
+        next_state: list = state[1:]  # сдвиг блоков регистра
+        next_state.append(last_block)
         for s in self.S:
-            #print(self.cyclic_left_bit_shift(next_state[s]))
             next_state[s] = self.cyclic_left_bit_shift(next_state[s])  # вертикальный сдвиг
         return next_state
 
     def cyclic_left_bit_shift(self, num):
-        return ((num << self.shift_step) % (1 << self.r)) ^ (num >> (self.r - self.shift_step))
+        return ((num << self.shift_step) % self.rbit) ^ (num >> (self.r - self.shift_step))
 
     def analytical_create_mixing_matrix(self):
         nr = self.n * self.r
@@ -134,45 +136,43 @@ class VerticalShiftRegisterFunction(AdditiveRegisterFunction):
             else:
                 for bit_num in range(self.r):
                     mixing_matrix[(block_num + 1) * self.r + (bit_num +
-                                                              self.shift_step) % self.r, block_num * self.r + bit_num] = 1  # todo: CHECK STEP DIR
+                                                        self.shift_step) % self.r, block_num * self.r + bit_num] = 1
         for d in self.D:
             mixing_matrix[d * self.r: (d + 1) * self.r, (self.n - 1) * self.r: self.n * self.r] = triangle_matrix
         return mixing_matrix
 
-    @staticmethod
-    def _generate_s_set_iterator(n):
-        base_list = [n - 1]
-        a = [j for j in range(n - 1)]
-        for i in range(n):
+    def _generate_s_set_iterator(self):
+        base_list = [self.n - 1]
+        a = [j for j in range(self.n - 1)]
+        for i in range(self.n):
             combs = tuple(it.combinations(a, i))
             for comb in combs:
                 yield list(comb) + base_list
 
-    @staticmethod
-    def all_sets_of_parametres(n, r):
-        d_iter = list(VerticalShiftRegisterFunction._generate_d_set_iterator(n))
-        s_iter = list(VerticalShiftRegisterFunction._generate_s_set_iterator(n))
+    def all_sets_of_parametres(self):
+        d_iter = list(self._generate_d_set_iterator())
+        s_iter = list(self._generate_s_set_iterator())
         for d in d_iter:
             for s in s_iter:
                 # for step in range(1, r):
-                for step in range(1, r):
+                for step in range(1, self.r):
                     yield (d, s, step)
 
 
 class InvolutiveRegisterFunction(AdditiveRegisterFunction):
 
-    def __init__(self, D, n=8, r=32):
+    def __init__(self, D, n, r):
         super().__init__(D, n, r)
         self.middle_bit_mask = (((1 << r) - 1) ^ 1) ^ (1 << (r - 1))
 
-    def act(self, state):
+    def act(self, state: list):
         last_block = 0
         for d in self.D:
             last_block = last_block + state[d] # сумма
         last_block %= (1 << self.r)
         last_block = self.swap_most_and_least(last_block)    # свапаем
-        next_state = np.roll(state, -1, axis=0)  # сдвиг блоков регистра
-        next_state[self.n - 1] = last_block
+        next_state: list = state[1:]  # сдвиг блоков регистра
+        next_state.append(last_block)
         return next_state
 
     def swap_most_and_least(self, a):
@@ -201,11 +201,11 @@ class InvolutiveRegisterFunction(AdditiveRegisterFunction):
 
 class TriangleRegisterFunction(AdditiveRegisterFunction):
 
-    def __init__(self, D, n=8, r=32):
+    def __init__(self, D, n, r):
         super().__init__(D, n, r)
         self.essential_vars = list(self._generate_essential_vars())
 
-    def act(self, state):
+    def act(self, state: list):
         last_block = 0
         for d in self.D:
             last_block = last_block + state[d]     # сумма
@@ -217,8 +217,8 @@ class TriangleRegisterFunction(AdditiveRegisterFunction):
                 out_bit ^= ((last_block & (1 << (self.r - 1 - ess_var))) >> (self.r - 1 - ess_var))
             modified_last_block ^= (out_bit << (self.r - 1 - ess_vars[0]))
         last_block = modified_last_block
-        next_state = np.roll(state, -1, axis=0)    # сдвиг блоков регистра
-        next_state[self.n - 1] = last_block
+        next_state: list = state[1:]  # сдвиг блоков регистра
+        next_state.append(last_block)
         return next_state
 
     def _generate_essential_vars(self):
@@ -231,16 +231,16 @@ class TriangleRegisterFunction(AdditiveRegisterFunction):
 
 class SboxV4RegisterFunction(AdditiveRegisterFunction):     # r = 4, т.к. S-блок
     #  id - tc26 - gost - 28147 - param - Z
-    def __init__(self, D, n=8):
+    def __init__(self, D, n):
         super().__init__(D, n, 4)
         self.sbox = (0xC, 0x4, 0x6, 0x2, 0xA, 0x5, 0xB, 0x9, 0xE, 0x8, 0xD, 0x7, 0x0, 0x3, 0xF, 0x1)
 
-    def act(self, state):
+    def act(self, state: list):
         last_block = 0
         for d in self.D:
             last_block = last_block + state[d]     # сумма
         last_block %= (1 << self.r)
         last_block = self.sbox[last_block]
-        next_state = np.roll(state, -1, axis=0)    # сдвиг блоков регистра
-        next_state[self.n - 1] = last_block
+        next_state: list = state[1:]  # сдвиг блоков регистра
+        next_state.append(last_block)
         return next_state
