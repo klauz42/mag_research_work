@@ -216,9 +216,8 @@ class TriangleRegisterFunction(AdditiveRegisterFunction):
             for ess_var in ess_vars:
                 out_bit ^= ((last_block & (1 << (self.r - 1 - ess_var))) >> (self.r - 1 - ess_var))
             modified_last_block ^= (out_bit << (self.r - 1 - ess_vars[0]))
-        last_block = modified_last_block
         next_state: list = state[1:]  # сдвиг блоков регистра
-        next_state.append(last_block)
+        next_state.append(modified_last_block)
         return next_state
 
     def _generate_essential_vars(self):

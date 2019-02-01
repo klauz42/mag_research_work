@@ -188,6 +188,28 @@ def log_all_iops(exp_log_file, n, r):
         count += 1
 
 
+def log_all_7_iops(exp_log_file, n, r):
+    current_time = time()
+    log_name = "logs\iops-7_" + str(n) + "_" + str(r) + "_" + str(current_time) + ".log"
+    logging.basicConfig(filename=log_name, level=logging.INFO)
+    count = 0
+    for p, exp in parse_exp(exp_log_file):
+        # if count < 7:
+        #     count += 1
+        #     continue
+        try:
+            d, s, sh = p
+        except ValueError:
+            count += 1
+            continue
+        if exp == inf or exp < 50:
+            continue
+        func = VerticalShiftRegisterFunction(d, s, sh, n, r)
+        iop = find_index_of_7_perfection(func, exp)
+        logging.info(str(p) + ";exp=" + str(exp) + ";iop-7=" + str(iop))
+        count += 1
+
+
 def binary_matrix_power(nparray, n):
     if n == 0:
         return np.identity(nparray.__len__(), dtype=np.uint64)
@@ -276,6 +298,7 @@ def find_index_of_0_perfection(func, exp):
             return power
     return inf
 
+
 def find_index_of_7_perfection(func, exp):
     n = func.n
     r = func.r
@@ -283,13 +306,13 @@ def find_index_of_7_perfection(func, exp):
     for power in range(exp, 500):
         #print("CHECKING " + str(power))
         checked_master_bits_num = 0
-        for master_bit_num in range(nr):
+        for master_bit_num in range(r):
             all_dependencies = False
             slaved_bits = 0  # ноль - младший; порядок в этом методе не важен, тщмта (но это не точно)
             #print("\tmasterbit = " + str(master_bit_num))
             maximum = 1 << nr
             masterbit = 1 << master_bit_num
-            for state_ in lkg(nr):
+            for state_ in lkg(r):
                 neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
                 acted_state = func.act_k_times(
                     split_state_to_blocks(state_, n, r),
@@ -320,7 +343,7 @@ def lkg(num_of_bits):
 
     a = 2
     while (a - 1) % 4 != 0:
-        a = randint(4, m - 1)
+        a = randint(1, m - 1)
     init = randint(0, m - 1)
     yield init
     for i in range(m - 1):
