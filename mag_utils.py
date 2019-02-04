@@ -140,7 +140,7 @@ def log_all_exps(n, r):
             break
         d, c, sh = p
         exp = inf
-        f = VerticalShiftRegisterFunction(d, c, n, r, sh)
+        f = VerticalShiftRegisterFunction(d, c, sh, n, r)
         adj_array = f.analytical_create_mixing_matrix()
         powered = adj_array
         #
@@ -165,6 +165,56 @@ def log_all_exps(n, r):
         )
         cnt = cnt + 1
 
+def log_all_circuits(n, r):
+    current_time = time()
+    log_name = "logs/circuits_" + str(n) + "_" + str(r) + "_" + str(current_time) + ".log"
+    logging.basicConfig(filename=log_name, level=logging.INFO, format='%(message)s')
+    np.set_printoptions(threshold=np.nan)
+    # n = r = 4
+    wilandt = (n * r) ** 2 - 2 * n * r + 2
+    estimate = (n ** 2) * r + n * r - 2 * n
+    print("Оценка Виландта: " + str(wilandt))
+    print("Оценка Кореневой: " + str(estimate))
+    f = VerticalShiftRegisterFunction([], [], 0, n, r)
+    parameters = f.all_sets_of_parametres()
+
+    cnt = 0
+    start = 0
+    end = inf
+    max_exp = estimate
+    for p in parameters:
+        if cnt < start:
+            cnt = cnt + 1
+            continue
+        if cnt == end:
+            break
+        d, c, sh = p
+        exp = inf
+        f = VerticalShiftRegisterFunction(d, c, sh, n, r)
+        adj_array = f.analytical_create_mixing_matrix()
+        circs = get_all_circuits_length(adj_array)
+        powered = adj_array
+        #
+        pre = binary_matrix_power(adj_array, 4096)
+        if not (pre > 0).all():
+            logging.info(
+                "{0}) params={1}; exp={2}\ncircuits: {3}".format(cnt, p, exp, circs)
+            )
+            cnt = cnt + 1
+            continue
+        for i in range(2, max_exp + 1):
+            powered = powered @ adj_array
+            powered[powered > 1] = 1
+            is_primitive = (powered > 0).all()
+
+            if is_primitive:
+                exp = i
+                break
+        logging.info(
+            "{0}) params={1}; exp={2}\ncircuits: {3}".format(cnt, p, exp, circs)
+            # + "\n" + str(adj_array)
+        )
+        cnt = cnt + 1
 
 def log_all_iops(exp_log_file, n, r):
     current_time = time()
@@ -182,7 +232,8 @@ def log_all_iops(exp_log_file, n, r):
             continue
         if exp == inf:
             continue
-        func = VerticalShiftRegisterFunction(d, s, n, r, sh)
+        print(p)
+        func = VerticalShiftRegisterFunction(d, s, sh, n, r)
         iop = find_index_of_perfection(func, exp)
         logging.info(str(p) + ";exp=" + str(exp) + ";iop=" + str(iop))
         count += 1
@@ -242,7 +293,6 @@ def find_index_of_perfection(func, exp):
             maximum = 1 << nr
             masterbit = 1 << master_bit_num
             for state_ in lkg(nr):      # range((1 << nr)):
-                state_ = randint(1, maximum - 1)
                 neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
                 acted_state = func.act_k_times(
                     split_state_to_blocks(state_, n, r),
@@ -251,7 +301,7 @@ def find_index_of_perfection(func, exp):
                 xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
                 slaved_bits = slaved_bits | xor
                 #print("State " + bin(state_) + " has been checked")
-                if slaved_bits == ((maximum) - 1):
+                if slaved_bits == maximum - 1:
                     all_dependencies = True
                     break
             if not all_dependencies:
@@ -286,7 +336,7 @@ def find_index_of_0_perfection(func, exp):
                 xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
                 slaved_bits = slaved_bits | xor
                 #print("State " + bin(state_) + " has been checked")
-                if slaved_bits == ((maximum) - 1):
+                if slaved_bits == maximum - 1:
                     all_dependencies = True
                     break
             if not all_dependencies:
@@ -333,6 +383,39 @@ def find_index_of_7_perfection(func, exp):
             return power
     return inf
 
+def find_approx_independend_vars_7(func, exp, tries):
+    n = func.n
+    r = func.r
+    nr = n * r
+    res = []
+    for power in range(exp, exp + 2):
+        #print("CHECKING " + str(power))
+        checked_master_bits_num = 0
+        checked_master_bits = set()
+        for master_bit_num in range(r):
+            all_dependencies = False
+            slaved_bits = 0  # ноль - младший; порядок в этом методе не важен, тщмта (но это не точно)
+            #print("\tmasterbit = " + str(master_bit_num))
+            maximum = 1 << nr
+            masterbit = 1 << master_bit_num
+            c = 0
+            for state_ in lkg(r):
+                neighbor_state = split_state_to_blocks(state_ ^ masterbit, n, r)
+                acted_state = func.act_k_times(
+                    split_state_to_blocks(state_, n, r),
+                    power)
+                acted_neigh_state = func.act_k_times(neighbor_state, power)
+                xor = combine_blocks_to_state(acted_state, n, r) ^ combine_blocks_to_state(acted_neigh_state, n, r)
+                slaved_bits = slaved_bits | xor
+                #print("State " + bin(state_) + " has been checked")
+                c += 1
+                if slaved_bits == ((maximum) - 1):
+                    checked_master_bits.add(masterbit)
+                    break
+                if c == tries or len(checked_master_bits) == r:
+                    break
+        res.append((power, len(checked_master_bits)))
+    return res
 
 #   num_of_bits >= 2
 def lkg(num_of_bits):

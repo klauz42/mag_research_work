@@ -243,3 +243,23 @@ class SboxV4RegisterFunction(AdditiveRegisterFunction):     # r = 4, т.к. S-б
         next_state: list = state[1:]  # сдвиг блоков регистра
         next_state.append(last_block)
         return next_state
+
+class SboxV32RegisterFunction(AdditiveRegisterFunction):     # r = 32
+    #  id - tc26 - gost - 28147 - param - Z
+    def __init__(self, D, n):
+        super().__init__(D, n, 32)
+        self.sbox = (0xC, 0x4, 0x6, 0x2, 0xA, 0x5, 0xB, 0x9, 0xE, 0x8, 0xD, 0x7, 0x0, 0x3, 0xF, 0x1)
+
+    def act(self, state: list):
+        last_block = 0
+        for d in self.D:
+            last_block = last_block + state[d]     # сумма
+        last_block %= (1 << self.r)
+
+        last_modified_subblock = self.sbox[last_block >> 28]
+        last_block <<= 4
+        for i in range(32//4):
+            last_block ^= (last_modified_subblock << 4*i)
+        next_state: list = state[1:]  # сдвиг блоков регистра
+        next_state.append(last_block)
+        return next_state
