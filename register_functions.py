@@ -108,7 +108,6 @@ class VerticalShiftRegisterFunction(AdditiveRegisterFunction):
         self.rbit = 1 << self.r
 
     def act(self, state: list):
-        # print("STATE: " + str(state))
         last_block: int = 0
         for d in self.D:
             last_block = last_block + state[d] # сумма
@@ -170,7 +169,7 @@ class InvolutiveRegisterFunction(AdditiveRegisterFunction):
         for d in self.D:
             last_block = last_block + state[d] # сумма
         last_block %= (1 << self.r)
-        last_block = self.swap_most_and_least(last_block)    # свапаем
+        last_block = self.swap_most_and_least(last_block)    # свапа
         next_state: list = state[1:]  # сдвиг блоков регистра
         next_state.append(last_block)
         return next_state
@@ -186,7 +185,6 @@ class InvolutiveRegisterFunction(AdditiveRegisterFunction):
     def analytical_create_mixing_matrix(self):
         nr = self.n * self.r
         triangle_matrix = self._create_triangle_matrix()
-        #swap
         triangle_matrix[:, 0] += triangle_matrix[:, self.r - 1]
         triangle_matrix[:, self.r - 1] = triangle_matrix[:, 0] - triangle_matrix[:, self.r - 1]
         triangle_matrix[:, 0] -= triangle_matrix[:, self.r - 1]
